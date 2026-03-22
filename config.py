@@ -19,4 +19,4 @@ DB_PATH = "jurisprudencia_trf2.db"
 # Quantos dias retroativos buscar a cada execução
 # 7 = última semana (recomendado para agendamento semanal)
 # Na primeira execução, aumente para 365 para popular o histórico
-DIAS_RETROATIVOS = 365
+DIAS_RETROATIVOS = 7
