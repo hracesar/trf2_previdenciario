@@ -90,11 +90,16 @@ body{font-family:'Open Sans',sans-serif;background:#F4F6F9;color:#222;font-size:
   <h1>Painel de Jurisprudência – TRF2/TRs</h1>
   <div class="topbar-right">
     <button class="btn btn-outline" onclick="document.getElementById('uploadModal').classList.add('open')">⬆ Importar planilha</button>
+    <button class="btn btn-outline" onclick="limparDados()" style="border-color:rgba(255,100,100,.5);color:#ffaaaa">🗑 Apagar dados</button>
     <button class="btn btn-pdf" onclick="window.print()">⎙ Exportar PDF</button>
   </div>
 </div>
 
 <div class="main">
+  <div style="background:#EAF4FB;border:1px solid #B8D8F0;border-radius:8px;padding:9px 16px;margin-bottom:14px;font-size:12px;color:#1A5276;display:flex;align-items:center;gap:8px">
+    <span>💾</span>
+    <span id="infoStorage">Carregando…</span>
+  </div>
   <div class="filters-bar">
     <div class="fg"><label>Nº do Processo</label>
       <input type="text" id="filtCNJ" placeholder="Parte do número…" oninput="aplicar()"></div>
@@ -231,9 +236,49 @@ function tipoDoc(doc){
 }
 
 function inicializar(){
-  DADOS=[...DADOS_INICIAIS];
+  // Tenta carregar dados salvos no navegador (localStorage)
+  try {
+    const salvo = localStorage.getItem('painel_trf2_dados');
+    if(salvo){
+      const parsed = JSON.parse(salvo);
+      if(parsed && parsed.length > 0){
+        DADOS = parsed;
+        document.getElementById('uploadStatus') && (document.getElementById('uploadStatus').textContent='');
+        console.log('Dados carregados do armazenamento local: ' + DADOS.length + ' processos');
+      } else {
+        DADOS = [...DADOS_INICIAIS];
+      }
+    } else {
+      DADOS = [...DADOS_INICIAIS];
+    }
+  } catch(e) {
+    DADOS = [...DADOS_INICIAIS];
+    console.warn('Erro ao carregar localStorage:', e);
+  }
   popularFiltros();
   aplicar();
+  atualizarInfoStorage();
+}
+
+function atualizarInfoStorage(){
+  const el = document.getElementById('infoStorage');
+  if(!el) return;
+  el.textContent = DADOS.length > 0
+    ? DADOS.length + ' processos em memória permanente · última importação: ' + (localStorage.getItem('painel_trf2_ultima')||'desconhecida')
+    : 'Nenhum dado salvo ainda. Importe uma planilha para começar.';
+}
+
+function limparDados(){
+  if(!confirm('Tem certeza? Isso apagará TODOS os processos salvos e não poderá ser desfeito.')) return;
+  localStorage.removeItem('painel_trf2_dados');
+  localStorage.removeItem('painel_trf2_ultima');
+  DADOS = [...DADOS_INICIAIS];
+  ['filtOrgao','filtRelator','filtAssunto'].forEach(id=>{
+    const s=document.getElementById(id);while(s.options.length>1)s.remove(1);
+  });
+  document.getElementById('selDetalhe').innerHTML='<option value="">Selecione…</option>';
+  popularFiltros(); aplicar(); atualizarInfoStorage();
+  document.getElementById('uploadStatus').textContent='🗑 Dados apagados.';
 }
 
 function popularFiltros(){
@@ -496,10 +541,18 @@ function processarUpload(input){
       const cnjs=new Set(DADOS.map(d=>String(d.CNJ)));
       const add=novos.filter(d=>!cnjs.has(String(d.CNJ)));
       DADOS=[...DADOS,...add];
-      document.getElementById('uploadStatus').textContent=`✅ ${add.length} processos adicionados (${novos.length-add.length} duplicatas ignoradas).`;
+      // Salvar permanentemente no navegador
+      try {
+        localStorage.setItem('painel_trf2_dados', JSON.stringify(DADOS));
+        const agora = new Date().toLocaleString('pt-BR');
+        localStorage.setItem('painel_trf2_ultima', agora);
+        document.getElementById('uploadStatus').textContent=`✅ ${add.length} processos adicionados (${novos.length-add.length} duplicatas ignoradas). Total acumulado: ${DADOS.length} processos. Dados salvos permanentemente.`;
+      } catch(e) {
+        document.getElementById('uploadStatus').textContent=`✅ ${add.length} processos adicionados. ⚠️ Não foi possível salvar permanentemente (armazenamento cheio?).`;
+      }
       ['filtOrgao','filtRelator','filtAssunto'].forEach(id=>{const s=document.getElementById(id);while(s.options.length>1)s.remove(1);});
       document.getElementById('selDetalhe').innerHTML='<option value="">Selecione…</option>';
-      popularFiltros();aplicar();
+      popularFiltros();aplicar();atualizarInfoStorage();
     }catch(err){document.getElementById('uploadStatus').textContent='❌ Erro: '+err.message;}
   };
   reader.readAsBinaryString(file);
