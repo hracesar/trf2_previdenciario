@@ -11380,48 +11380,78 @@ function fechar(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
 function processarUpload(input){
-  const file=input.files[0];if(!file)return;
-  document.getElementById('uploadStatus').textContent='⏳ Processando…';
+  const file=input.files[0];
+  if(!file) return;
+  const status = document.getElementById('uploadStatus');
+  status.textContent='⏳ Processando…';
+
   const reader=new FileReader();
+  reader.onerror = () => { status.textContent='❌ Erro ao ler o arquivo.'; };
   reader.onload=e=>{
     try{
       const wb=XLSX.read(e.target.result,{type:'binary'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
-      const novos=rows.filter(r=>{
+
+      // 1. Filtrar apenas previdenciários e tipos válidos
+      const filtrados=rows.filter(r=>{
         const cx=String(r['CAIXA INTEGRAÇÃO']||'');
-        const tipo=tipoDoc(r['DOCUMENTO']||'');
-        return cx.includes('PREV')&&String(r['RELATOR']||'')!=='RICARDO PERLINGEIRO'&&['ACÓRDÃO','DECISÃO MONOCRÁTICA'].includes(tipo);
-      }).map(r=>({
-        CNJ:String(r['CNJ']||''),
-        'ÓRGÃO JULGADOR':r['ÓRGÃO JULGADOR']||'',
-        CLASSE:r['CLASSE']||'',
-        ASSUNTO_CORRETO:detectarAssunto(r['DOCUMENTO']||''),
-        RELATOR:r['RELATOR']||null,
-        REFORMA:r['REFORMA']||null,
-        RESULTADO:classificarRes(r['ETIQUETA'],r['REFORMA'],r['DOCUMENTO']),
-        CADASTRO:String(r['CADASTRO']||'').substring(0,10),
-        EMENTA:(r['DOCUMENTO']||'').toString().substring(0,2000),
-        TIPO_DOC:'ACÓRDÃO'
+        const rel=String(r['RELATOR']||'');
+        const tipo=tipoDoc(String(r['DOCUMENTO']||''));
+        return cx.includes('PREV')
+          && rel!=='RICARDO PERLINGEIRO'
+          && ['ACÓRDÃO','DECISÃO MONOCRÁTICA'].includes(tipo);
+      });
+
+      // 2. Mapear para o formato do painel
+      const mapeados=filtrados.map(r=>({
+        CNJ: String(r['CNJ']||''),
+        'ÓRGÃO JULGADOR': String(r['ÓRGÃO JULGADOR']||''),
+        CLASSE: String(r['CLASSE']||''),
+        ASSUNTO_CORRETO: detectarAssunto(String(r['DOCUMENTO']||'')),
+        RELATOR: r['RELATOR']||null,
+        REFORMA: r['REFORMA']||null,
+        RESULTADO: classificarRes(r['ETIQUETA'],r['REFORMA'],r['DOCUMENTO']),
+        CADASTRO: String(r['CADASTRO']||'').substring(0,10),
+        EMENTA: String(r['DOCUMENTO']||'').substring(0,2000),
       }));
-      const semAssunto = novos.filter(d=>!d.ASSUNTO_CORRETO).length;
-      const novosValidos = novos.filter(d=>!!d.ASSUNTO_CORRETO);
+
+      // 3. Excluir sem assunto identificado
+      const semAssunto=mapeados.filter(d=>!d.ASSUNTO_CORRETO).length;
+      const validos=mapeados.filter(d=>!!d.ASSUNTO_CORRETO);
+
+      // 4. Excluir duplicatas
       const cnjs=new Set(DADOS.map(d=>String(d.CNJ)));
-      const add=novosValidos.filter(d=>!cnjs.has(String(d.CNJ)));
-      DADOS=[...DADOS,...add];
-      // Salvar permanentemente no navegador
-      try {
-        localStorage.setItem('painel_trf2_dados', JSON.stringify(DADOS));
-        const agora = new Date().toLocaleString('pt-BR');
-        localStorage.setItem('painel_trf2_ultima', agora);
-        document.getElementById('uploadStatus').textContent=`✅ ${add.length} processos adicionados · ${semAssunto} excluídos (assunto não identificável) · ${novos.length-add.length-semAssunto} duplicatas ignoradas · Total acumulado: ${DADOS.length} processos. Dados salvos permanentemente.`;
-      } catch(e) {
-        document.getElementById('uploadStatus').textContent=`✅ ${add.length} processos adicionados. ⚠️ Não foi possível salvar permanentemente (armazenamento cheio?).`;
+      const novos=validos.filter(d=>d.CNJ && !cnjs.has(d.CNJ));
+      const duplicatas=validos.length-novos.length;
+
+      // 5. Adicionar e salvar
+      DADOS=[...DADOS,...novos];
+      try{
+        localStorage.setItem('painel_trf2_dados',JSON.stringify(DADOS));
+        localStorage.setItem('painel_trf2_ultima',new Date().toLocaleString('pt-BR'));
+      }catch(ex){
+        console.warn('localStorage cheio:',ex);
       }
-      ['filtOrgao','filtRelator','filtAssunto'].forEach(id=>{const s=document.getElementById(id);while(s.options.length>1)s.remove(1);});
+
+      // 6. Atualizar mensagem e painel
+      status.textContent=`✅ ${novos.length} processos adicionados · ${semAssunto} excluídos (sem assunto) · ${duplicatas} duplicatas ignoradas · Total: ${DADOS.length} processos.`;
+      ['filtOrgao','filtRelator','filtAssunto'].forEach(id=>{
+        const s=document.getElementById(id);
+        while(s.options.length>1) s.remove(1);
+      });
       document.getElementById('selDetalhe').innerHTML='<option value="">Selecione…</option>';
-      popularFiltros();aplicar();atualizarInfoStorage();
-    }catch(err){document.getElementById('uploadStatus').textContent='❌ Erro: '+err.message;}
+      popularFiltros();
+      aplicar();
+      atualizarInfoStorage();
+
+      // 7. Resetar input para permitir reimportar o mesmo arquivo
+      input.value='';
+
+    }catch(err){
+      status.textContent='❌ Erro ao processar: '+err.message;
+      console.error(err);
+    }
   };
   reader.readAsBinaryString(file);
 }
