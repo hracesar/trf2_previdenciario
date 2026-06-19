@@ -269,16 +269,17 @@ function atualizarInfoStorage(){
 }
 
 function limparDados(){
-  if(!confirm('Tem certeza? Isso apagará TODOS os processos salvos e não poderá ser desfeito.')) return;
+  if(!confirm('Tem certeza? Isso apagará TODOS os processos do painel (incluindo os da planilha original) e não poderá ser desfeito.')) return;
   localStorage.removeItem('painel_trf2_dados');
   localStorage.removeItem('painel_trf2_ultima');
-  DADOS = [...DADOS_INICIAIS];
+  // Zera completamente — não restaura DADOS_INICIAIS, pois o objetivo é apagar tudo
+  DADOS = [];
   ['filtOrgao','filtRelator','filtAssunto'].forEach(id=>{
     const s=document.getElementById(id);while(s.options.length>1)s.remove(1);
   });
   document.getElementById('selDetalhe').innerHTML='<option value="">Selecione…</option>';
   popularFiltros(); aplicar(); atualizarInfoStorage();
-  document.getElementById('uploadStatus').textContent='🗑 Dados apagados.';
+  document.getElementById('uploadStatus').textContent='🗑 Todos os dados foram apagados. O painel está vazio.';
 }
 
 function popularFiltros(){
