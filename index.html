@@ -83,6 +83,18 @@ body{font-family:'Open Sans',sans-serif;background:#F4F6F9;color:#222;font-size:
 .nota{background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#1565C0;line-height:1.6}
 @media print{.topbar-right,.filters-bar .btn,.btn-clear,.modal-bg{display:none!important}}
 @media(max-width:760px){.grid2{grid-template-columns:1fr}.bar-label{width:120px;min-width:120px}}
+
+.subassunto-card{margin-bottom:10px;border:1px solid #EEF0F4;border-radius:8px;padding:12px 14px}
+.subassunto-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.subassunto-nome{font-size:12.5px;font-weight:700;color:#1A3A5C}
+.subassunto-pct{font-size:13px;font-weight:700}
+.subassunto-bar{height:8px;border-radius:4px;background:#EEF0F4;overflow:hidden;margin-bottom:6px}
+.subassunto-bar-fill{height:100%;border-radius:4px}
+.subassunto-meta{font-size:11px;color:#888}
+.subassunto-exemplos{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+.subassunto-exemplo-chip{font-size:10.5px;padding:2px 8px;border-radius:10px;background:#F0F2F5;color:#555;cursor:pointer;font-family:monospace}
+.subassunto-exemplo-chip:hover{background:#E3EAF3;color:#1A3A5C}
+.aviso-amostra{background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#5D4037;line-height:1.6}
 </style>
 </head>
 <body>
@@ -150,6 +162,15 @@ body{font-family:'Open Sans',sans-serif;background:#F4F6F9;color:#222;font-size:
 
   <div class="nota" id="notaAssunto"></div>
 
+  <!-- Subassuntos: benefícios por incapacidade -->
+  <div class="proc-section" id="secSubassuntos" style="display:none">
+    <h3>Subassuntos — Benefícios por Incapacidade (auxílio-doença, aposentadoria por invalidez, auxílio-acidente)</h3>
+    <div class="aviso-amostra">
+      ⚠ <strong>Leitura com cautela:</strong> a classificação por subassunto é feita por reconhecimento de padrões no texto da ementa disponível na planilha. Amostras pequenas (poucos casos) podem gerar percentuais de 100% que não se sustentariam com mais dados. Use como indicativo, não como conclusão estatística definitiva.
+    </div>
+    <div id="subassuntosLista"></div>
+  </div>
+
   <!-- Lista de processos -->
   <div class="proc-section">
     <h3>Processos — clique para ver o acórdão</h3>
@@ -208,6 +229,91 @@ function detectarAssunto(doc){
   ];
   for(const[nm,ps]of pp)for(const p of ps)if(p.test(t))return nm;
   return null; // sem assunto identificável — será excluído
+}
+
+// ── SUBASSUNTOS: Benefícios por Incapacidade ──────────────────
+// (funcionalidade adicional — não interfere nas funções acima)
+const ASSUNTOS_INCAPACIDADE = ['Auxílio por Incapacidade / Auxílio-Doença','Aposentadoria por Invalidez','Auxílio-Acidente'];
+
+const SUBASSUNTOS_PADROES = {
+  'Qualidade de segurado': [/manutenção da qualidade de segurad/,/período de graça/,/perda da qualidade de segurad/,/reaquisição da qualidade/],
+  'Carência': [/(não\s)?(cumpr|preench|atend)[a-zçã]*\s.{0,15}carência/,/carência (mínima|exigida|não cumprida|cumprida)/,/número (mínimo|insuficiente) de contribuições/],
+  'Preexistência da incapacidade/doença': [/(incapacidade|doença|patologia) preexistente/,/agravamento de (doença|patologia) preexistente/,/preexistência.{0,20}(incapacidade|doença|filiação)/],
+  'Cerceamento de defesa / nulidade da perícia': [/cerceamento de defesa/,/nulidade d[ae] (sentença|perícia)/,/(determina|necessária) nova perícia/],
+  'Valoração do laudo pericial': [/laudo pericial (não )?(constatou|atestou|concluiu)/,/conclusões? d[ae] perícia (judicial)?/,/(im|in)pugnação ao laudo/],
+  'Segurado especial / trabalhador rural': [/segurado especial/,/início de prova material/,/trabalhador rural/,/rurícola/],
+  'Termo inicial do benefício (DIB/DII)': [/data de início d[oa] (benefício|incapacidade)/,/termo inicial d[oa] benefício/,/\bdib\b.{0,10}\bdii\b/],
+  'Reabilitação profissional': [/reabilitação profissional/,/reinserção no mercado de trabalho/,/incapacidade.{0,30}não impede.{0,20}reabilita/],
+  'Redução da capacidade laboral (auxílio-acidente)': [/redução (parcial|permanente)? d[ae] capacidade (laboral|laborativa)/,/sequela.{0,20}(redu|limita)/],
+  'Filiação tardia / oportunista': [/filiação (tardia|oportunista)/],
+};
+
+function classificarSubassuntos(ementa){
+  const t=(ementa||'').toLowerCase();
+  const encontrados=[];
+  for(const nome in SUBASSUNTOS_PADROES){
+    for(const p of SUBASSUNTOS_PADROES[nome]){
+      if(p.test(t)){ encontrados.push(nome); break; }
+    }
+  }
+  return encontrados;
+}
+
+function renderSubassuntos(){
+  const sec = document.getElementById('secSubassuntos');
+  const lista = document.getElementById('subassuntosLista');
+  if(!sec || !lista) return;
+
+  const baseIncapacidade = filtrados.filter(d => ASSUNTOS_INCAPACIDADE.includes(d.ASSUNTO_CORRETO));
+  if(baseIncapacidade.length === 0){
+    sec.style.display='none';
+    return;
+  }
+  sec.style.display='block';
+
+  // Expandir: cada processo pode contribuir para vários subassuntos
+  const linhas=[];
+  baseIncapacidade.forEach(d=>{
+    const subs = classificarSubassuntos(d.EMENTA);
+    subs.forEach(s=> linhas.push({sub:s, resultado:d.RESULTADO, cnj:d.CNJ}));
+  });
+
+  const porSub = {};
+  linhas.forEach(l=>{
+    if(!porSub[l.sub]) porSub[l.sub] = [];
+    porSub[l.sub].push(l);
+  });
+
+  const resumos = Object.keys(porSub).map(nome=>{
+    const itens = porSub[nome];
+    const merito = itens.filter(i=>i.resultado==='Favorável'||i.resultado==='Desfavorável');
+    const fav = merito.filter(i=>i.resultado==='Favorável').length;
+    const pct = merito.length>0 ? Math.round(fav/merito.length*100) : null;
+    const exemplos = [...new Set(itens.map(i=>i.cnj))].slice(0,4);
+    return {nome, fav, totalMerito:merito.length, totalMencoes:itens.length, pct, exemplos};
+  }).filter(r=>r.totalMerito>=2); // exige ao menos 2 casos com mérito para exibir %
+
+  resumos.sort((a,b)=>(b.pct||0)-(a.pct||0));
+
+  if(!resumos.length){
+    lista.innerHTML = '<p style="color:#aaa;font-size:12px;padding:12px">Dados insuficientes para identificar subassuntos com os filtros atuais (mínimo 2 casos por subassunto).</p>';
+    return;
+  }
+
+  lista.innerHTML = resumos.map(r=>{
+    const cor = r.pct>=80 ? '#2E7D52' : r.pct<=50 ? '#C0392B' : '#8E44AD';
+    return `<div class="subassunto-card">
+      <div class="subassunto-head">
+        <span class="subassunto-nome">${r.nome}</span>
+        <span class="subassunto-pct" style="color:${cor}">${r.pct}% êxito INSS</span>
+      </div>
+      <div class="subassunto-bar"><div class="subassunto-bar-fill" style="width:${r.pct}%;background:${cor}"></div></div>
+      <div class="subassunto-meta">${r.fav} favoráveis de ${r.totalMerito} com mérito · ${r.totalMencoes} menção(ões) no total</div>
+      <div class="subassunto-exemplos">
+        ${r.exemplos.map(cnj=>`<span class="subassunto-exemplo-chip" onclick="abrirAcordao('${cnj}')" title="Ver acórdão">${cnj}</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
 }
 function classificarRes(et,rf,doc){
   const e=(et||'').toUpperCase();
@@ -322,7 +428,7 @@ function aplicar(){
 
 function renderTudo(){
   renderKPIs(); renderBarras(); renderStacks(); renderRankings();
-  renderNota(); renderProcessos();
+  renderNota(); renderProcessos(); renderSubassuntos();
 }
 
 function ct(arr,v){return arr.filter(d=>d.RESULTADO===v).length;}
