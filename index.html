@@ -510,8 +510,16 @@ function renderTudo(){
 function ct(arr,v){return arr.filter(d=>d.RESULTADO===v).length;}
 
 function renderKPIs(){
-  const tot=filtrados.length,fav=ct(filtrados,'Favorável'),desf=ct(filtrados,'Desfavorável');
-  const mer=fav+desf,pct=mer>0?Math.round(fav/mer*100):0;
+  const tot=filtrados.length;
+  const fav=ct(filtrados,'Favorável');
+  const desf=ct(filtrados,'Desfavorável');
+  const indet=ct(filtrados,'Indeterminado');
+  // "Com mérito" = favoráveis + desfavoráveis + indeterminados
+  const mer=fav+desf+indet;
+  // % êxito calculado só sobre favoráveis + desfavoráveis (exclui indeterminados,
+  // que exigem análise manual e não devem inflar nem deflacionar o índice)
+  const base=fav+desf;
+  const pct=base>0?Math.round(fav/base*100):0;
   document.getElementById('kpis').innerHTML=`
     <div class="kpi total"><div class="kpi-label">Total de processos</div><div class="kpi-val">${tot}</div></div>
     <div class="kpi merito"><div class="kpi-label">Com mérito</div><div class="kpi-val">${mer}</div></div>
